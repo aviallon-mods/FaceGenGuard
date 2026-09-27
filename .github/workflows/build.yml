@@ -1,0 +1,92 @@
+name: build
+
+# FaceGenGuard: the off-game test suite runs on Linux AND Windows (the handler's
+# decision core is plain C++, and two toolchains is what makes the claim
+# cross-compiler rather than single-compiler), and the DLL is cross-built on
+# Linux with the proven Mantella-AE104 toolchain (xwin + vcpkg + clang-cl,
+# CommonLibSSE-NG v6.8.0 - the only revision whose address-library reader can
+# parse the 1.7.104 versionlib bins).
+
+on:
+  push:
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: off-game tests (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: cmake -S tests -B build-tests -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build the test binary
+        shell: bash
+        run: cmake --build build-tests --config Release
+
+      - name: Run the off-game suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -x build-tests/fgtests ]; then
+            BIN=build-tests/fgtests
+          else
+            BIN=build-tests/Release/fgtests.exe
+          fi
+          "$BIN" 2>&1 | tee tests.out
+
+          # A green run is only meaningful if it actually ran something: zero
+          # failures AND a non-trivial number of checks. A runner that silently
+          # ran no tests would otherwise look exactly like success.
+          grep -qE '0 failure\(s\)' tests.out || { echo "::error::the suite reported failures"; exit 1; }
+          checks=$(sed -nE 's/.*[0-9]+ test\(s\) run, ([0-9]+) check\(s\).*/\1/p' tests.out | tail -1)
+          echo "checks executed: ${checks:-<none>}"
+          test -n "$checks" || { echo "::error::could not read the check count"; exit 1; }
+          test "$checks" -gt 150 || { echo "::error::only $checks checks ran - the suite did not really execute"; exit 1; }
+
+  build:
+    name: FaceGenGuard.dll (linux -> MSVC ABI via xwin + vcpkg + clang-cl)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      # The toolchain pieces are immutable and expensive (the xwin sysroot is
+      # the Windows SDK, llvm-mingw is ~1.5 GB, the vcpkg binary cache holds
+      # every dependency build). Cache them together; setup-toolchain.sh is
+      # idempotent and skips whatever the cache restored.
+      - name: Cache the cross toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/llvm-mingw
+            ~/.local/share/vcpkg
+            ~/.cache/vcpkg-binaries
+            /tmp/xwin-winsysroot
+            /tmp/xwin-cache
+            /tmp/clng
+          key: fg-toolchain-v1-${{ runner.os }}
+
+      - name: Set up the toolchain (idempotent)
+        run: tools/setup-toolchain.sh
+
+      - name: Cross-build FaceGenGuard.dll
+        run: tools/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FaceGenGuard
+          path: /tmp/facegenguard-build/out/FaceGenGuard.dll

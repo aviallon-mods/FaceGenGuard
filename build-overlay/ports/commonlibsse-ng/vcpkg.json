@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "commonlibsse-ng",
+  "version-semver": "6.8.0",
+  "port-version": 0,
+  "description": "CommonLibSSE-NG (alandtse/CommonLibVR @ 44dd911, v6.8.0) built from source for Linux cross-compilation. The upstream colorglass vcpkg registry is frozen at CLNG 3.6/3.7 (2022) and predates Address Library V5 support, which Skyrim AE 1.7.104 requires.",
+  "homepage": "https://github.com/alandtse/CommonLibVR",
+  "license": "GPL-3.0-or-later",
+  "supports": "windows & x64",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    },
+    "directxmath",
+    "directxtk",
+    "fmt",
+    "nlohmann-json",
+    "rapidcsv",
+    "simpleini",
+    "spdlog",
+    "toml11",
+    "xbyak"
+  ]
+}
