@@ -5,6 +5,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#if defined(_WIN32)
+#	include <malloc.h>  // _aligned_malloc / _aligned_free: MSVC's CRT has NO std::aligned_alloc
+#endif
 
 // ---------------------------------------------------------------------------
 // The heap probe: replaceable global operator new/delete overloads that count
@@ -28,7 +31,11 @@ namespace
 		if (a_alignment > alignof(std::max_align_t)) {
 			// std::aligned_alloc requires size to be a multiple of alignment.
 			const auto rounded = (a_size + a_alignment - 1) / a_alignment * a_alignment;
+#if defined(_WIN32)
+			result = _aligned_malloc(rounded, a_alignment);  // MSVC: no std::aligned_alloc at all
+#else
 			result = std::aligned_alloc(a_alignment, rounded);
+#endif
 		} else {
 			result = std::malloc(a_size);
 		}
@@ -38,10 +45,16 @@ namespace
 		return result;
 	}
 
-	void ProbeFree(void* a_ptr) noexcept
+	void ProbeFree(void* a_ptr, std::size_t a_alignment) noexcept
 	{
 		if (a_ptr != nullptr) {
 			g_frees.fetch_add(1, std::memory_order_relaxed);
+#if defined(_WIN32)
+			if (a_alignment > alignof(std::max_align_t)) {
+				_aligned_free(a_ptr);  // must pair with _aligned_malloc
+				return;
+			}
+#endif
 			std::free(a_ptr);
 		}
 	}
@@ -52,14 +65,14 @@ void* operator new[](std::size_t a_size) { return ProbeAllocate(a_size, 0); }
 void* operator new(std::size_t a_size, std::align_val_t a_alignment) { return ProbeAllocate(a_size, static_cast<std::size_t>(a_alignment)); }
 void* operator new[](std::size_t a_size, std::align_val_t a_alignment) { return ProbeAllocate(a_size, static_cast<std::size_t>(a_alignment)); }
 
-void operator delete(void* a_ptr) noexcept { ProbeFree(a_ptr); }
-void operator delete[](void* a_ptr) noexcept { ProbeFree(a_ptr); }
-void operator delete(void* a_ptr, std::size_t) noexcept { ProbeFree(a_ptr); }
-void operator delete[](void* a_ptr, std::size_t) noexcept { ProbeFree(a_ptr); }
-void operator delete(void* a_ptr, std::align_val_t) noexcept { ProbeFree(a_ptr); }
-void operator delete[](void* a_ptr, std::align_val_t) noexcept { ProbeFree(a_ptr); }
-void operator delete(void* a_ptr, std::size_t, std::align_val_t) noexcept { ProbeFree(a_ptr); }
-void operator delete[](void* a_ptr, std::size_t, std::align_val_t) noexcept { ProbeFree(a_ptr); }
+void operator delete(void* a_ptr) noexcept { ProbeFree(a_ptr, 0); }
+void operator delete[](void* a_ptr) noexcept { ProbeFree(a_ptr, 0); }
+void operator delete(void* a_ptr, std::size_t) noexcept { ProbeFree(a_ptr, 0); }
+void operator delete[](void* a_ptr, std::size_t) noexcept { ProbeFree(a_ptr, 0); }
+void operator delete(void* a_ptr, std::align_val_t a_alignment) noexcept { ProbeFree(a_ptr, static_cast<std::size_t>(a_alignment)); }
+void operator delete[](void* a_ptr, std::align_val_t a_alignment) noexcept { ProbeFree(a_ptr, static_cast<std::size_t>(a_alignment)); }
+void operator delete(void* a_ptr, std::size_t, std::align_val_t a_alignment) noexcept { ProbeFree(a_ptr, static_cast<std::size_t>(a_alignment)); }
+void operator delete[](void* a_ptr, std::size_t, std::align_val_t a_alignment) noexcept { ProbeFree(a_ptr, static_cast<std::size_t>(a_alignment)); }
 
 namespace hstest
 {
