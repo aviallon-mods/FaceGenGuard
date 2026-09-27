@@ -63,7 +63,7 @@ namespace hs
 		// Library target ([entry, entry + 0x800) -- see ResilienceGuard.cpp).
 		void SetSingleRange(std::uint64_t a_begin, std::uint64_t a_end) noexcept;
 
-		// Optional ini override: "0x438A50-0x439250[,; ]0x1234-0x5678...".
+		// Optional ini override: "0x100000-0x100800[,; ]0x200000-0x201000...".
 		// Hex, optional 0x prefix, ranges separated by commas, semicolons or
 		// whitespace. Reversed, empty or malformed entries are REJECTED and
 		// parsing continues with the next one; extra ranges beyond
