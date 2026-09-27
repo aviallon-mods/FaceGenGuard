@@ -1,6 +1,7 @@
 #include "harness.h"
 
 #include <atomic>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <new>
