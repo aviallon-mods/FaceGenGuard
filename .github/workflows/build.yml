@@ -59,6 +59,9 @@ jobs:
   build:
     name: FaceGenGuard.dll (linux -> MSVC ABI via xwin + vcpkg + clang-cl)
     runs-on: ubuntu-latest
+    # contents:write is for the tag-time release attach (softprops/action-gh-release).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -86,7 +89,55 @@ jobs:
       - name: Cross-build FaceGenGuard.dll
         run: tools/build.sh
 
+      # The installable FOMOD zip is assembled here, from the DLL just built and
+      # the two VERSIONED packaging sources (fomod/ModuleConfig.xml,
+      # config/FaceGenGuard.ini) -- then VERIFIED before anything uploads it.
+      # tools/verify-fomod.py is a real, mutation-tested gate: a well-formed
+      # ModuleConfig.xml whose <optionalFileGroups> yields ZERO <plugin> (e.g.
+      # <optionalFileGroups/>) makes Amethyst's wizard resolve
+      # `selected_plugin or first_plugin` to None and die with AttributeError on
+      # .description, and such a zip turns this job red. See
+      # research/fomod-packaging-verification.md for the mutation evidence.
+      - name: Package the FOMOD zip
+        run: tools/package-fomod.sh /tmp/facegenguard-build/out/FaceGenGuard.dll
+
+      - name: Verify the FOMOD package (gate)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(FaceGenGuard-*-fomod.zip)
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one fomod zip, found ${#zips[@]}: ${zips[*]:-none}"
+            exit 1
+          fi
+          python3 tools/verify-fomod.py "${zips[0]}" /tmp/facegenguard-build/out/FaceGenGuard.dll
+
       - uses: actions/upload-artifact@v4
         with:
           name: FaceGenGuard
           path: /tmp/facegenguard-build/out/FaceGenGuard.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FaceGenGuard-FOMOD
+          path: FaceGenGuard-*-fomod.zip
+
+      # Release convention (the same one the sibling SKSE repos use): a pushed
+      # tag attaches the VERIFIED installable zip to that tag's GitHub release.
+      - name: Attach the FOMOD zip to a release when tagging
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: FaceGenGuard-*-fomod.zip
+          body: |
+            FaceGenGuard FOMOD for SKSE (Skyrim SE/AE 1.7.104, Address Library V5).
+
+            An SKSE plugin that survives one known RaceMenu face-gen crash instead
+            of dying. Behaviour-changing and opt-in: see SKSE/Plugins/FaceGenGuard.ini
+            ([Resilience] bEnabled).
+
+            Install with Amethyst: Mods -> Install mod from file...
+            The zip was assembled AND shape-verified by CI (tools/verify-fomod.py:
+            exact 3-entry layout, a ModuleConfig.xml that yields at least one
+            <plugin>, a <pattern> copying SKSE, a [Resilience] bEnabled key, and
+            the DLL byte-identical to the CI build).
