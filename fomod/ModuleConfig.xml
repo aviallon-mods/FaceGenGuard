@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+  <moduleName>FaceGenGuard</moduleName>
+  <moduleImage path=""/>
+  <installSteps order="Explicit">
+    <installStep name="Install">
+      <optionalFileGroups>
+        <group name="Options" type="SelectAny">
+          <plugins>
+            <plugin name="FaceGenGuard">
+              <description>Survival guard for the RaceMenu face-gen crash (Skyrim AE 1.7.104). Behaviour-changing and opt-in: see SKSE/Plugins/FaceGenGuard.ini ([Resilience] bEnabled).</description>
+              <image path=""/>
+              <typeDescriptor><type name="Recommended"/></typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+      <patterns>
+        <pattern name="all files">
+          <sourceFiles><source name="SKSE"/></sourceFiles>
+          <destination><destination path=""/></destination>
+        </pattern>
+      </patterns>
+    </installStep>
+  </installSteps>
+</config>

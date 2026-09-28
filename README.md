@@ -81,6 +81,11 @@ resilience-guard: 3/64 suppressions used, 0 refused by the fail-open cap
 | `[Resilience] uMaxSuppressions` | `64` | Fail-open cap: after this many suppressions, let the crash happen. |
 | `[Resilience] sRvaWhitelist` | *(empty)* | Optional whitelist override. Empty = the built-in Address Library target (`ID 26938`, `[entry, entry+0x800)`). Non-empty = exactly these hex RVA ranges instead (`0xAAAAAA-0xBBBBBB, ...`, end exclusive, relative to `SkyrimSE.exe`), for a build where the built-in target does not apply. |
 
+The `Default` column is the compiled fallback used when the file (or the key)
+is absent. The FOMOD zip ships `config/FaceGenGuard.ini` verbatim as
+`SKSE/Plugins/FaceGenGuard.ini`, with `bEnabled=1`: installing the package is
+what turns the guard on.
+
 When the guard is enabled the startup banner says so, unmissably:
 
 ```
@@ -128,7 +133,8 @@ must decline to suppress after the cap and must count exactly), and the log
 line (exact fixed format, truncation safety, and **zero heap allocations** —
 the harness replaces global `operator new`/`delete` with counting wrappers, and
 the probe is itself tested against a deliberately non-elidable allocation).
-CI runs the suite on both platforms and cross-builds the DLL.
+CI runs the suite on both platforms, cross-builds the DLL, and packages +
+verifies the installable FOMOD zip (a bad package fails CI, not the wizard).
 
 ## Layout
 
@@ -142,9 +148,12 @@ src/
     ResiliencePolicy.{h,cpp} the handler's decision logic (plain C++, unit-tested)
 tests/                     off-game suite + heap-allocation probe
 tools/                     build.sh (Linux -> MSVC ABI), setup-toolchain.sh,
-                           verify-dll.py (PE/export/Address-Library-V5 checks)
+                           verify-dll.py (PE/export/Address-Library-V5 checks),
+                           package-fomod.sh + verify-fomod.py (the FOMOD zip
+                           and the CI gate that verifies its shape)
+fomod/ModuleConfig.xml     FOMOD wizard definition (packaged verbatim)
 build-overlay/             vcpkg overlay port + triplet (the proven toolchain)
-config/FaceGenGuard.ini    documented defaults
+config/FaceGenGuard.ini    the shipped ini, packaged verbatim into the FOMOD zip
 ```
 
 ## Licence
