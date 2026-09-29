@@ -72,7 +72,16 @@ SRC=$WORK/$NAME-src
 BUILD=$WORK/$NAME-build
 rm -rf "$SRC" "$BUILD"
 mkdir -p "$SRC" "$WORK" "$VCPKG_DEFAULT_BINARY_CACHE"
-cp -a "$SRC_IN"/. "$SRC"/
+# Copy the source tree, EXCLUDING $WORK when it sits inside it: CI passes
+# WORK=$PWD/build (so the verified output lands at a repo-relative path the
+# spec packages), and a plain `cp -a . "$SRC"/` then copies the destination
+# into itself - `cp: cannot copy a directory ... into itself`, exit 1.
+WORK_REL=$(realpath --relative-to="$SRC_IN" "$WORK" 2>/dev/null || echo "")
+if [ -n "$WORK_REL" ] && [ "${WORK_REL#..}" = "$WORK_REL" ]; then
+    tar -C "$SRC_IN" --exclude="./$WORK_REL" -cf - . | tar -C "$SRC" -xf -
+else
+    cp -a "$SRC_IN"/. "$SRC"/
+fi
 rm -rf "$SRC/.git"
 
 # The plugin's committed vcpkg-configuration.json is already the recent
