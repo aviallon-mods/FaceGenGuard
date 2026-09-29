@@ -85,11 +85,12 @@ jobs:
       # cachix/install-nix-action used to provide) is bootstrapped here from
       # the official installer: daemon install, non-interactive in CI (stdin is
       # not a TTY; NIX_INSTALLER_YES=1 covers the rest).
+      install_nix: true
       setup_command: |
         set -euo pipefail
-        curl -fsSL https://nixos.org/nix/install | NIX_INSTALLER_YES=1 sh
-        echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
-        export PATH=/nix/var/nix/profiles/default/bin:$PATH
+        # Nix itself comes from DeterminateSystems/nix-installer-action
+        # (install_nix: true), which puts it on PATH the supported way.
+        command -v nix
         tools/setup-toolchain.sh
       # WORK=$PWD/build so tools/build.sh's own verified output (after its
       # feature-string and verify-dll.py gates) lands at the repo-relative path
@@ -97,7 +98,6 @@ jobs:
       # raw as the extra artifact, exactly like before.
       build_command: |
         set -euo pipefail
-        export PATH=/nix/var/nix/profiles/default/bin:$PATH
         WORK="$PWD/build" tools/build.sh
       # The toolchain pieces are immutable and expensive (the xwin sysroot is
       # the Windows SDK, llvm-mingw is ~1.5 GB, the vcpkg binary cache holds
