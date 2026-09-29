@@ -6,6 +6,14 @@ name: build
 # Linux with the proven Mantella-AE104 toolchain (xwin + vcpkg + clang-cl,
 # CommonLibSSE-NG v6.8.0 - the only revision whose address-library reader can
 # parse the 1.7.104 versionlib bins).
+#
+# Everything from the build onwards -- the FOMOD zip assembled from
+# fomod-package.toml, the mutation-tested verify gate, artifacts, the tag
+# release and the rolling `ci` prerelease -- belongs to the shared pipeline
+# aviallon-mods/modforge/.github/workflows/build-fomod.yml@main. The cross
+# build itself runs inside that job (setup_command/build_command plus the same
+# toolchain cache as before), so nothing ships that the gate has not seen and
+# the build is not run twice.
 
 on:
   push:
@@ -56,88 +64,56 @@ jobs:
           test -n "$checks" || { echo "::error::could not read the check count"; exit 1; }
           test "$checks" -gt 150 || { echo "::error::only $checks checks ran - the suite did not really execute"; exit 1; }
 
-  build:
-    name: FaceGenGuard.dll (linux -> MSVC ABI via xwin + vcpkg + clang-cl)
-    runs-on: ubuntu-latest
-    # contents:write is for the tag-time release attach (softprops/action-gh-release).
+  # Build + package + verify + upload + release, delegated to the shared
+  # pipeline. It checks out this repo and aviallon-mods/modforge, restores the
+  # cross-toolchain cache, runs the two commands below, then assembles the zip
+  # from fomod-package.toml and refuses to upload it unless
+  # modforge/tools/verify_fomod.py passes (exact entry list, >= 1 <plugin> in
+  # the ModuleConfig, payload byte-identity, stamped meta.ini). See
+  # research/fomod-packaging-verification.md for the mutation evidence behind
+  # the >= 1 <plugin> rule.
+  package:
+    name: package + verify + release
+    # The FOMOD must not ship past a red suite.
+    needs: tests
     permissions:
       contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: cachix/install-nix-action@v31
-
+    uses: aviallon-mods/modforge/.github/workflows/build-fomod.yml@main
+    with:
+      mod_name: FaceGenGuard
+      # The reusable workflow runs commands, not actions, so Nix (which
+      # cachix/install-nix-action used to provide) is bootstrapped here from
+      # the official installer: daemon install, non-interactive in CI (stdin is
+      # not a TTY; NIX_INSTALLER_YES=1 covers the rest).
+      setup_command: |
+        set -euo pipefail
+        curl -fsSL https://nixos.org/nix/install | NIX_INSTALLER_YES=1 sh
+        echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
+        export PATH=/nix/var/nix/profiles/default/bin:$PATH
+        tools/setup-toolchain.sh
+      # WORK=$PWD/build so tools/build.sh's own verified output (after its
+      # feature-string and verify-dll.py gates) lands at the repo-relative path
+      # fomod-package.toml packages: build/out/FaceGenGuard.dll. It is uploaded
+      # raw as the extra artifact, exactly like before.
+      build_command: |
+        set -euo pipefail
+        export PATH=/nix/var/nix/profiles/default/bin:$PATH
+        WORK="$PWD/build" tools/build.sh
       # The toolchain pieces are immutable and expensive (the xwin sysroot is
       # the Windows SDK, llvm-mingw is ~1.5 GB, the vcpkg binary cache holds
-      # every dependency build). Cache them together; setup-toolchain.sh is
-      # idempotent and skips whatever the cache restored.
-      - name: Cache the cross toolchain
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local/share/llvm-mingw
-            ~/.local/share/vcpkg
-            ~/.cache/vcpkg-binaries
-            /tmp/xwin-winsysroot
-            /tmp/xwin-cache
-            /tmp/clng
-          key: fg-toolchain-v1-${{ runner.os }}
-
-      - name: Set up the toolchain (idempotent)
-        run: tools/setup-toolchain.sh
-
-      - name: Cross-build FaceGenGuard.dll
-        run: tools/build.sh
-
-      # The installable FOMOD zip is assembled here, from the DLL just built and
-      # the two VERSIONED packaging sources (fomod/ModuleConfig.xml,
-      # config/FaceGenGuard.ini) -- then VERIFIED before anything uploads it.
-      # tools/verify-fomod.py is a real, mutation-tested gate: a well-formed
-      # ModuleConfig.xml whose <optionalFileGroups> yields ZERO <plugin> (e.g.
-      # <optionalFileGroups/>) makes Amethyst's wizard resolve
-      # `selected_plugin or first_plugin` to None and die with AttributeError on
-      # .description, and such a zip turns this job red. See
-      # research/fomod-packaging-verification.md for the mutation evidence.
-      - name: Package the FOMOD zip
-        run: tools/package-fomod.sh /tmp/facegenguard-build/out/FaceGenGuard.dll
-
-      - name: Verify the FOMOD package (gate)
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          zips=(FaceGenGuard-*-fomod.zip)
-          if [ "${#zips[@]}" -ne 1 ]; then
-            echo "::error::expected exactly one fomod zip, found ${#zips[@]}: ${zips[*]:-none}"
-            exit 1
-          fi
-          python3 tools/verify-fomod.py "${zips[0]}" /tmp/facegenguard-build/out/FaceGenGuard.dll
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: FaceGenGuard
-          path: /tmp/facegenguard-build/out/FaceGenGuard.dll
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: FaceGenGuard-FOMOD
-          path: FaceGenGuard-*-fomod.zip
-
-      # Release convention (the same one the sibling SKSE repos use): a pushed
-      # tag attaches the VERIFIED installable zip to that tag's GitHub release.
-      - name: Attach the FOMOD zip to a release when tagging
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: FaceGenGuard-*-fomod.zip
-          body: |
-            FaceGenGuard FOMOD for SKSE (Skyrim SE/AE 1.7.104, Address Library V5).
-
-            An SKSE plugin that survives one known RaceMenu face-gen crash instead
-            of dying. Behaviour-changing and opt-in: see SKSE/Plugins/FaceGenGuard.ini
-            ([Resilience] bEnabled).
-
-            Install with Amethyst: Mods -> Install mod from file...
-            The zip was assembled AND shape-verified by CI (tools/verify-fomod.py:
-            exact 3-entry layout, a ModuleConfig.xml that yields at least one
-            <plugin>, a <pattern> copying SKSE, a [Resilience] bEnabled key, and
-            the DLL byte-identical to the CI build).
+      # every dependency build). setup-toolchain.sh is idempotent and skips
+      # whatever the cache restored.
+      cache_paths: |
+        ~/.local/share/llvm-mingw
+        ~/.local/share/vcpkg
+        ~/.cache/vcpkg-binaries
+        /tmp/xwin-winsysroot
+        /tmp/xwin-cache
+        /tmp/clng
+      # A reusable workflow call's `with:` allows neither the runner context
+      # nor hashFiles, so the OS is spelled out: this is the exact string the
+      # old cache step produced as `fg-toolchain-v1-${{ runner.os }}` on
+      # ubuntu-latest, keeping the warm cache across this reshape. Bump the
+      # suffix when tools/setup-toolchain.sh pins change.
+      cache_key: fg-toolchain-v1-Linux
+      extra_artifact: build/out/FaceGenGuard.dll

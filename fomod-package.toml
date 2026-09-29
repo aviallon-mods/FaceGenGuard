@@ -1,0 +1,43 @@
+# FOMOD package spec for aviallon-mods/modforge's tools/package_fomod.py
+# (schema: that file's docstring). CI's shared pipeline
+# (aviallon-mods/modforge/.github/workflows/build-fomod.yml@main) assembles AND
+# verifies the zip from this list; nothing else may appear in the archive.
+#
+# The zip reproduces the historical 3-entry layout exactly
+# (fomod/ModuleConfig.xml, SKSE/Plugins/FaceGenGuard.dll,
+# SKSE/Plugins/FaceGenGuard.ini) plus meta.ini at the root, which the shared
+# packager always stamps and adds -- that extra entry is the new org standard.
+
+name = "FaceGenGuard"
+zip_name = "FaceGenGuard-{version}-fomod.zip"
+# Single source of truth for the version (same line tools/build.sh stamps into
+# the DLL); never duplicated as a literal.
+version = { cmake = "CMakeLists.txt" }
+game_name = "skyrimspecialedition"
+author = "aviallon"
+description = "Survival guard for one known RaceMenu face-gen crash (Skyrim AE 1.7.104): recovers from the fault instead of dying. Behaviour-changing and opt-in ([Resilience] bEnabled)."
+nexus_name = "FaceGenGuard"
+nexus_url = "https://github.com/aviallon-mods/FaceGenGuard"
+file_category = "MAIN"
+# Runtime requirements, accurate only: an SKSE plugin whose whitelist is
+# resolved through the Address Library (README: "computed at runtime from the
+# Address Library").
+requirements = [
+  "30379:SKSE64",
+  "32444:Address Library for SKSE Plugins",
+]
+fomod = true
+
+[[files]]
+src = "fomod/ModuleConfig.xml"
+dest = "fomod/ModuleConfig.xml"
+
+[[files]]
+# tools/build.sh's verified output when run with WORK=$PWD/build (what CI's
+# build_command does).
+src = "build/out/FaceGenGuard.dll"
+dest = "SKSE/Plugins/FaceGenGuard.dll"
+
+[[files]]
+src = "config/FaceGenGuard.ini"
+dest = "SKSE/Plugins/FaceGenGuard.ini"
